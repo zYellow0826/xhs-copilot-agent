@@ -40,3 +40,6 @@ yarn-error.log*
 # Misc
 .cache/
 coverage/
+
+# Internal planning docs — not for opensource repo
+docs/
