@@ -4,8 +4,27 @@
 
 ## 当前状态
 
-- 阶段：**v0.1 开发前**（架构与规划已完成）
-- 下一步：按 `docs/V0.1-SPEC.md` 搭建项目骨架
+- 阶段：**v0.1 骨架已搭好**，待填真实方法论 + 跑通联调
+- 下一步：替换 `apps/api/prompts/methodology.md` 占位 → 配 `.env` → 本地起服务
+
+## 本地开发
+
+```bash
+# 1. 后端
+cd apps/api
+python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+cp .env.example .env                                # 填入 DeepSeek + Supabase
+uvicorn main:app --reload --port 8000
+
+# 2. 前端（另开终端）
+cd apps/web
+npm install
+cp .env.local.example .env.local                    # 填入 Supabase + API_BASE_URL
+npm run dev                                         # http://localhost:3000
+```
+
+健康检查：`curl http://localhost:8000/health` 应返回 `{"ok":true}`。
 
 ## 文档导航
 
