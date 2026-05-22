@@ -98,4 +98,4 @@ cd apps/web && npm run typecheck && npm run lint
 
 ## License
 
-License 待选（倾向 MIT）。在 LICENSE 文件落地前，本仓库代码仅供学习与二次开发参考，商用请先开 Issue 沟通。
+[MIT](LICENSE) © 2026 ZhangSH
