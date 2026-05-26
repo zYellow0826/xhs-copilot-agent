@@ -163,7 +163,7 @@ export default function Home() {
       <footer className="mt-16 border-t border-neutral-200 pt-6 text-xs text-neutral-400">
         <p>
           <a
-            href="https://github.com/ZhangSH/xhs-copilot"
+            href="https://github.com/zYellow0826/xhs-copilot"
             className="hover:text-xhs-pink"
             target="_blank"
             rel="noreferrer"

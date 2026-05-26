@@ -4,7 +4,7 @@
 
 内置一套通用的小红书运营方法论作为系统约束，模型在硬规则下创作，自动规避违禁词、套路化、流量低效问题。可自由替换为你的私房方法论。
 
-![CI](https://github.com/ZhangSH/xhs-copilot/actions/workflows/ci.yml/badge.svg)
+![CI](https://github.com/zYellow0826/xhs-copilot/actions/workflows/ci.yml/badge.svg)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 ![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)
 ![Node 20+](https://img.shields.io/badge/node-20+-brightgreen.svg)
@@ -68,7 +68,7 @@ xhs-copilot/
 需要：Python 3.12+、Node 20+、[DeepSeek API Key](https://platform.deepseek.com)。Supabase 可选。
 
 ```bash
-git clone https://github.com/ZhangSH/xhs-copilot.git
+git clone https://github.com/zYellow0826/xhs-copilot.git
 cd xhs-copilot
 
 # 1. 启动后端
