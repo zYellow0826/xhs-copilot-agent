@@ -14,6 +14,7 @@ from typing import Any, AsyncIterator
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
+from pydantic import BaseModel
 
 from db import save_generation
 from graphs.creation import GenerationError, build_graph
@@ -39,8 +40,17 @@ app.add_middleware(
 graph = build_graph()
 
 
+def _json_default(obj: Any) -> Any:
+    # Pydantic v2 models must be dumped to dict, not stringified — otherwise
+    # the SSE event's `data.output.output` arrives at the browser as a `repr()`
+    # string and the frontend crashes on `output.notes.map`.
+    if isinstance(obj, BaseModel):
+        return obj.model_dump()
+    return str(obj)
+
+
 def _sse(payload: dict) -> str:
-    return f"data: {json.dumps(payload, default=str, ensure_ascii=False)}\n\n"
+    return f"data: {json.dumps(payload, default=_json_default, ensure_ascii=False)}\n\n"
 
 
 @app.get("/health")
