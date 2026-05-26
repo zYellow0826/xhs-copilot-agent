@@ -28,6 +28,7 @@
 > 启动后访问 `http://localhost:3000`。表单 → 流式进度 → 笔记卡片。
 
 ![小红书运营 Copilot 截图](jt.png)
+![小红书运营 Copilot 截图2](jt2.png)
 
 
 ---
