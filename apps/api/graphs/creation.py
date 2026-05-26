@@ -1,15 +1,36 @@
+"""Creation workflow — v1.0.
+
+Single-node LangGraph:
+
+    START → generate → END
+
+`generate` calls DeepSeek with a forced `submit_notes` tool call and validates
+the structured payload through `GenerationOutput`. If the model returns
+malformed JSON or schema-invalid content, we retry up to
+`settings.DEEPSEEK_RETRY_MAX` times with an injected correction message.
+"""
+
+from __future__ import annotations
+
+import json
+import logging
 from typing import TypedDict
 
-from langgraph.graph import StateGraph, START, END
-from openai import OpenAI
+import httpx
+from langgraph.graph import END, START, StateGraph
+from openai import APIError, APITimeoutError, OpenAI, RateLimitError
+from pydantic import ValidationError
 
 from prompts.system import SYSTEM_PROMPT
 from schemas import GenerationInput, GenerationOutput
 from settings import settings
 
+log = logging.getLogger(__name__)
+
 client = OpenAI(
     api_key=settings.DEEPSEEK_API_KEY,
     base_url=settings.DEEPSEEK_BASE_URL,
+    timeout=httpx.Timeout(settings.DEEPSEEK_TIMEOUT_SECONDS),
 )
 
 
@@ -28,26 +49,90 @@ SUBMIT_TOOL = {
 }
 
 
-def generate_node(state: CreationState) -> CreationState:
+class GenerationError(RuntimeError):
+    """Raised when DeepSeek cannot produce a valid GenerationOutput after retries."""
+
+
+def _extract_tool_arguments(response) -> str:
+    """Pull the JSON-string arguments off the first tool call, or raise."""
+    choices = response.choices or []
+    if not choices:
+        raise GenerationError("model returned no choices")
+    msg = choices[0].message
+    tool_calls = getattr(msg, "tool_calls", None) or []
+    if not tool_calls:
+        raise GenerationError("model returned no tool_calls; refused to submit_notes")
+    return tool_calls[0].function.arguments
+
+
+def _call_model(messages: list[dict]) -> GenerationOutput:
     response = client.chat.completions.create(
         model=settings.DEEPSEEK_MODEL_CHAT,
-        max_tokens=4096,
-        messages=[
-            {"role": "system", "content": SYSTEM_PROMPT},
-            {"role": "user", "content": state["input"].model_dump_json()},
-        ],
+        max_tokens=settings.DEEPSEEK_MAX_TOKENS,
+        messages=messages,
         tools=[SUBMIT_TOOL],
         tool_choice={"type": "function", "function": {"name": "submit_notes"}},
     )
 
-    tool_call = response.choices[0].message.tool_calls[0]
-    output = GenerationOutput.model_validate_json(tool_call.function.arguments)
+    usage = getattr(response, "usage", None)
+    if usage is not None:
+        cache_hit = getattr(usage, "prompt_cache_hit_tokens", 0)
+        log.info(
+            "deepseek usage: cache_hit=%s prompt_tokens=%s completion_tokens=%s",
+            cache_hit,
+            getattr(usage, "prompt_tokens", "?"),
+            getattr(usage, "completion_tokens", "?"),
+        )
 
-    usage = response.usage
-    cache_hit = getattr(usage, "prompt_cache_hit_tokens", 0)
-    print(f"[cache] hit={cache_hit}/{usage.prompt_tokens}")
+    raw_args = _extract_tool_arguments(response)
+    return GenerationOutput.model_validate_json(raw_args)
 
-    return {**state, "output": output}
+
+def generate_node(state: CreationState) -> CreationState:
+    base_messages: list[dict] = [
+        {"role": "system", "content": SYSTEM_PROMPT},
+        {"role": "user", "content": state["input"].model_dump_json()},
+    ]
+    messages = list(base_messages)
+
+    last_error: Exception | None = None
+    for attempt in range(settings.DEEPSEEK_RETRY_MAX + 1):
+        try:
+            output = _call_model(messages)
+            return {**state, "output": output}
+        except ValidationError as exc:
+            last_error = exc
+            log.warning("attempt %s: schema validation failed: %s", attempt + 1, exc)
+            messages = list(base_messages) + [
+                {
+                    "role": "user",
+                    "content": (
+                        "你上一次的输出未通过 schema 校验，错误："
+                        f"{exc.errors()[:3]}。请严格按 submit_notes 工具的参数 schema 重新生成，"
+                        "确保字段齐全、类型正确、约束（长度/数量）全部满足。"
+                    ),
+                }
+            ]
+        except json.JSONDecodeError as exc:
+            last_error = exc
+            log.warning("attempt %s: tool args were not valid JSON: %s", attempt + 1, exc)
+            messages = list(base_messages) + [
+                {
+                    "role": "user",
+                    "content": "你上一次工具调用的 arguments 不是合法 JSON。请重新生成，确保是严格的 JSON。",
+                }
+            ]
+        except (APITimeoutError, RateLimitError) as exc:
+            last_error = exc
+            log.warning("attempt %s: transient API error: %s", attempt + 1, exc)
+        except APIError as exc:
+            log.error("non-retryable DeepSeek API error: %s", exc)
+            raise GenerationError(f"DeepSeek API error: {exc}") from exc
+
+    raise GenerationError(
+        f"failed to produce valid GenerationOutput after "
+        f"{settings.DEEPSEEK_RETRY_MAX + 1} attempts: {last_error}"
+    )
 
 
 def build_graph():

@@ -21,6 +21,13 @@ const EVENT_LABELS: Record<string, string> = {
   on_chain_end: "完成",
 };
 
+type SseEvent = {
+  event?: string;
+  name?: string;
+  message?: string;
+  data?: unknown;
+};
+
 export default function Home() {
   const [streaming, setStreaming] = useState(false);
   const [events, setEvents] = useState<string[]>([]);
@@ -41,7 +48,14 @@ export default function Home() {
       });
 
       if (!res.ok || !res.body) {
-        throw new Error(`upstream ${res.status}`);
+        let detail = `upstream ${res.status}`;
+        try {
+          const body = await res.json();
+          if (body?.error) detail = body.error;
+        } catch {
+          /* ignore */
+        }
+        throw new Error(detail);
       }
 
       const reader = res.body.getReader();
@@ -60,14 +74,18 @@ export default function Home() {
           const line = raw.split("\n").find((l) => l.startsWith("data: "));
           if (!line) continue;
 
-          let evt: { event?: string; name?: string; data?: unknown };
+          let evt: SseEvent;
           try {
             evt = JSON.parse(line.slice(6));
           } catch {
             continue;
           }
 
-          const label = EVENT_LABELS[evt.event ?? ""] ?? evt.event;
+          if (evt.event === "error") {
+            throw new Error(evt.message || evt.name || "生成失败");
+          }
+
+          const label = EVENT_LABELS[evt.event ?? ""];
           if (label) setEvents((prev) => [...prev, label]);
 
           if (
@@ -89,6 +107,8 @@ export default function Home() {
     }
   }
 
+  const showEmpty = !streaming && !output && !error && events.length === 0;
+
   return (
     <main className="mx-auto max-w-3xl px-6 py-10">
       <header className="mb-8">
@@ -107,7 +127,10 @@ export default function Home() {
       )}
 
       {error && (
-        <p className="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+        <p
+          role="alert"
+          className="mt-6 rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700"
+        >
           出错了：{error}
         </p>
       )}
@@ -125,6 +148,32 @@ export default function Home() {
           </div>
         </section>
       )}
+
+      {showEmpty && (
+        <section className="mt-12 rounded border border-dashed border-neutral-300 bg-white/60 px-6 py-10 text-center">
+          <p className="text-sm text-neutral-500">
+            填好表单点击「生成笔记」，1-3 篇可直接发布的小红书笔记会在这里出现。
+          </p>
+          <p className="mt-2 text-xs text-neutral-400">
+            内置方法论会强制约束标题钩子、违禁词、字数等硬规则。
+          </p>
+        </section>
+      )}
+
+      <footer className="mt-16 border-t border-neutral-200 pt-6 text-xs text-neutral-400">
+        <p>
+          <a
+            href="https://github.com/ZhangSH/xhs-copilot"
+            className="hover:text-xhs-pink"
+            target="_blank"
+            rel="noreferrer"
+          >
+            GitHub
+          </a>
+          {" · "}
+          MIT License · 内容由 DeepSeek 生成，发布前请人工 review
+        </p>
+      </footer>
     </main>
   );
 }

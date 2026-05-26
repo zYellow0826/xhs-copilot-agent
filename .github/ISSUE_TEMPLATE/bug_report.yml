@@ -1,0 +1,65 @@
+name: Bug 报告
+description: 发现了 bug，让我们知道
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢报告 bug。在提交前请先搜一下是否已有类似 Issue。
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: 发生了什么？
+      description: 简要描述问题。
+      placeholder: 点击"生成笔记"后…
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. 启动后端 `uvicorn main:app --reload`
+        2. 启动前端 `npm run dev`
+        3. 填表单：店铺类型=美甲店、…
+        4. 点击「生成笔记」
+        5. 看到…
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / 提交
+      description: git SHA 或 release tag
+    validations:
+      required: false
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: 出现在
+      options:
+        - 前端 (apps/web)
+        - 后端 (apps/api)
+        - 部署 / 环境
+        - 文档
+        - 不确定
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 相关日志 / 截图
+      description: 后端 stderr、浏览器控制台、Network 面板等
+      render: shell

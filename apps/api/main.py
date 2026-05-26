@@ -1,18 +1,37 @@
+"""FastAPI entrypoint.
+
+`POST /generate` streams LangGraph events as SSE. Any internal error is
+serialised into a final `event: error` frame instead of crashing the stream,
+so the browser can render a useful message even when SSE has already started.
+"""
+
+from __future__ import annotations
+
 import json
+import logging
+from typing import Any, AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 
 from db import save_generation
-from graphs.creation import build_graph
+from graphs.creation import GenerationError, build_graph
 from schemas import GenerationInput
 from settings import settings
 
-app = FastAPI(title="xhs-copilot api", version="0.1.0")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+)
+log = logging.getLogger("xhs-copilot")
+
+app = FastAPI(title="xhs-copilot api", version="1.0.0")
+
+_origins = [o.strip() for o in settings.CORS_ALLOW_ORIGINS.split(",") if o.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins or ["*"],
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -20,25 +39,54 @@ app.add_middleware(
 graph = build_graph()
 
 
+def _sse(payload: dict) -> str:
+    return f"data: {json.dumps(payload, default=str, ensure_ascii=False)}\n\n"
+
+
 @app.get("/health")
-def health():
-    return {"ok": True}
+def health() -> dict[str, Any]:
+    return {
+        "ok": True,
+        "version": app.version,
+        "supabase": settings.supabase_enabled,
+    }
 
 
 @app.post("/generate")
-async def generate(payload: GenerationInput):
-    async def stream():
-        final_state = None
-        async for event in graph.astream_events(
-            {"input": payload, "output": None}, version="v2"
-        ):
-            yield f"data: {json.dumps(event, default=str, ensure_ascii=False)}\n\n"
-            if event["event"] == "on_chain_end" and event["name"] == "LangGraph":
-                final_state = event["data"]["output"]
+async def generate(payload: GenerationInput) -> StreamingResponse:
+    async def stream() -> AsyncIterator[str]:
+        final_output = None
+        try:
+            async for event in graph.astream_events(
+                {"input": payload, "output": None}, version="v2"
+            ):
+                yield _sse(event)
+                if (
+                    event.get("event") == "on_chain_end"
+                    and event.get("name") == "LangGraph"
+                ):
+                    data = event.get("data") or {}
+                    state = data.get("output") or {}
+                    final_output = state.get("output")
+        except GenerationError as exc:
+            log.exception("generation failed")
+            yield _sse({"event": "error", "name": "GenerationError", "message": str(exc)})
+            return
+        except Exception as exc:  # noqa: BLE001 — last-resort SSE error frame
+            log.exception("unexpected error in /generate stream")
+            yield _sse({"event": "error", "name": exc.__class__.__name__, "message": str(exc)})
+            return
 
-        if final_state and final_state.get("output"):
+        if final_output:
             await save_generation(
-                payload, final_state["output"], model=settings.DEEPSEEK_MODEL_CHAT
+                payload, final_output, model=settings.DEEPSEEK_MODEL_CHAT
             )
 
-    return StreamingResponse(stream(), media_type="text/event-stream")
+    return StreamingResponse(
+        stream(),
+        media_type="text/event-stream",
+        headers={
+            "cache-control": "no-cache, no-transform",
+            "x-accel-buffering": "no",
+        },
+    )

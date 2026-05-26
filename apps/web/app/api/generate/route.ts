@@ -8,16 +8,26 @@ const API_BASE_URL = process.env.API_BASE_URL ?? "http://localhost:8000";
 export async function POST(req: NextRequest) {
   const payload = await req.text();
 
-  const upstream = await fetch(`${API_BASE_URL}/generate`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: payload,
-  });
+  let upstream: Response;
+  try {
+    upstream = await fetch(`${API_BASE_URL}/generate`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: payload,
+    });
+  } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    return Response.json(
+      { error: `cannot reach backend (${API_BASE_URL}): ${message}` },
+      { status: 502 }
+    );
+  }
 
   if (!upstream.ok || !upstream.body) {
-    return new Response(
-      JSON.stringify({ error: `upstream ${upstream.status}` }),
-      { status: 502, headers: { "content-type": "application/json" } }
+    const text = await upstream.text().catch(() => "");
+    return Response.json(
+      { error: `upstream ${upstream.status}: ${text.slice(0, 500)}` },
+      { status: 502 }
     );
   }
 
